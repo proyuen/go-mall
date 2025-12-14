@@ -1,0 +1,41 @@
+name: Go CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.25' # Use a stable Go version
+
+    - name: Install dependencies
+      run: go mod download
+
+    - name: Start Services (Docker Compose)
+      run: |
+        docker compose -f deploy/docker-compose.yml up -d --wait
+        docker ps
+
+    - name: Run Tests
+      # We need to ensure the config in CI points to the docker services
+      # Since we use localhost in config.yaml and docker networking in CI, 
+      # 'localhost' works because the runner exposes ports.
+      # We might need to adjust config path or env vars if defaults don't match.
+      run: |
+        go test -v ./pkg/... ./internal/...
+
+    - name: Shutdown Services
+      if: always()
+      run: docker compose -f deploy/docker-compose.yml down

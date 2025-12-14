@@ -1,8 +1,13 @@
 package main
 
 import (
+	"fmt"
 	"log"
 
+	"github.com/proyuen/go-mall/internal/handler"
+	"github.com/proyuen/go-mall/internal/repository"
+	"github.com/proyuen/go-mall/internal/router"
+	"github.com/proyuen/go-mall/internal/service"
 	"github.com/proyuen/go-mall/pkg/config"
 	"github.com/proyuen/go-mall/pkg/database"
 )
@@ -20,10 +25,18 @@ func main() {
 		log.Fatalf("Failed to initialize database: %v", err)
 	}
 
-	// 3. Start Server (Placeholder)
-	// TODO: Inject 'db' into repositories -> services -> handlers
-	log.Printf("Server starting on port %s in %s mode...\n", cfg.Server.Port, cfg.Server.Mode)
+	// 3. Initialize Repositories, Services, Handlers, and Router
+	userRepo := repository.NewUserRepository(db)
+	userService := service.NewUserService(userRepo)
+	userHandler := handler.NewUserHandler(userService)
 
-	// Keep the application running for now (simulating server)
-	select {}
+	router := router.NewRouter(userHandler)
+	engine := router.InitRoutes()
+
+	// 4. Start Server
+	addr := fmt.Sprintf(":%s", cfg.Server.Port)
+	log.Printf("Server starting on %s in %s mode...\n", addr, cfg.Server.Mode)
+	if err := engine.Run(addr); err != nil {
+		log.Fatalf("Server failed to start: %v", err)
+	}
 }
