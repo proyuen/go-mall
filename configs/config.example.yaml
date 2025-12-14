@@ -1,0 +1,17 @@
+server:
+  port: "8080"
+  mode: "debug" # debug, release, test
+
+database:
+  host: "localhost"
+  port: "5432"
+  user: "postgres"
+  password: "YOUR_PASSWORD"
+  dbname: "mall_db"
+  sslmode: "disable"
+  timezone: "Asia/Shanghai"
+
+redis:
+  addr: "localhost:6379"
+  password: ""
+  db: 0
