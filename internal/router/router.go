@@ -3,19 +3,22 @@ package router
 import (
 	"github.com/gin-gonic/gin"
 	"github.com/proyuen/go-mall/internal/handler"
+	"github.com/proyuen/go-mall/internal/middleware"
 )
 
 // Router struct holds dependencies for routing.
 type Router struct {
 	userHandler    *handler.UserHandler
 	productHandler *handler.ProductHandler
+	jwtSecret      string
 }
 
 // NewRouter creates a new Router instance.
-func NewRouter(userHandler *handler.UserHandler, productHandler *handler.ProductHandler) *Router {
+func NewRouter(userHandler *handler.UserHandler, productHandler *handler.ProductHandler, jwtSecret string) *Router {
 	return &Router{
 		userHandler:    userHandler,
 		productHandler: productHandler,
+		jwtSecret:      jwtSecret,
 	}
 }
 
@@ -36,8 +39,11 @@ func (r *Router) InitRoutes() *gin.Engine {
 		// Product routes
 		productRoutes := v1.Group("/products")
 		{
-			// TODO: Protect CreateProduct with Auth Middleware
-			productRoutes.POST("", r.productHandler.CreateProduct)
+			// Protected routes
+			// Use AuthMiddleware to protect product creation
+			productRoutes.POST("", middleware.AuthMiddleware(r.jwtSecret), r.productHandler.CreateProduct)
+			
+			// Public routes
 			productRoutes.GET("/:id", r.productHandler.GetProduct)
 			productRoutes.GET("", r.productHandler.ListProducts)
 		}

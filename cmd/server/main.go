@@ -36,7 +36,7 @@ func main() {
 	productService := service.NewProductService(productRepo)
 	productHandler := handler.NewProductHandler(productService)
 
-	router := router.NewRouter(userHandler, productHandler)
+	router := router.NewRouter(userHandler, productHandler, cfg.JWT.Secret)
 	engine := router.InitRoutes()
 
 	// 4. Start Server
