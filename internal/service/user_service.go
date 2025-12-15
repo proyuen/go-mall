@@ -42,18 +42,21 @@ type UserService interface {
 }
 
 type userService struct {
-	repo repository.UserRepository
+	repo      repository.UserRepository
+	jwtSecret string
 }
 
 // NewUserService creates a new UserService instance.
-func NewUserService(repo repository.UserRepository) UserService {
-	return &userService{repo: repo}
+func NewUserService(repo repository.UserRepository, jwtSecret string) UserService {
+	return &userService{
+		repo:      repo,
+		jwtSecret: jwtSecret,
+	}
 }
 
 // Register creates a new user.
 func (s *userService) Register(ctx context.Context, req *UserRegisterReq) (*UserRegisterResp, error) {
 	// 1. Check if user already exists
-	// Note: We might want to add Context support to Repository later
 	existingUser, err := s.repo.GetByUsername(ctx, req.Username)
 	if err == nil && existingUser != nil {
 		return nil, errors.New("username already exists")
@@ -99,7 +102,7 @@ func (s *userService) Login(ctx context.Context, req *UserLoginReq) (*UserLoginR
 	}
 
 	// 3. Generate Token
-	token, err := utils.GenerateToken(user.ID, user.Username)
+	token, err := utils.GenerateToken(user.ID, user.Username, s.jwtSecret)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate token: %w", err)
 	}

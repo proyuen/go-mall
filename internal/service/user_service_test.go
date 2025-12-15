@@ -104,7 +104,7 @@ func TestUserService_Register(t *testing.T) {
 			defer ctrl.Finish()
 
 			mockRepo := mocks.NewMockUserRepository(ctrl)
-			userService := service.NewUserService(mockRepo)
+			userService := service.NewUserService(mockRepo, "test_secret")
 			ctx := context.Background()
 
 			if tt.fields.mockSetup != nil {
@@ -217,7 +217,7 @@ func TestUserService_Login(t *testing.T) {
 			defer ctrl.Finish()
 
 			mockRepo := mocks.NewMockUserRepository(ctrl)
-			userService := service.NewUserService(mockRepo)
+			userService := service.NewUserService(mockRepo, "test_secret")
 			ctx := context.Background()
 
 			if tt.fields.mockSetup != nil {

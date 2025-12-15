@@ -15,3 +15,6 @@ redis:
   addr: "localhost:6379"
   password: ""
   db: 0
+
+jwt:
+  secret: "YOUR_JWT_SECRET_KEY" # Change this to a strong, random key in production

@@ -27,7 +27,7 @@ func main() {
 
 	// 3. Initialize Repositories, Services, Handlers, and Router
 	userRepo := repository.NewUserRepository(db)
-	userService := service.NewUserService(userRepo)
+	userService := service.NewUserService(userRepo, cfg.JWT.Secret)
 	userHandler := handler.NewUserHandler(userService)
 
 	router := router.NewRouter(userHandler)
