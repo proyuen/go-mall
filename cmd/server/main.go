@@ -26,11 +26,17 @@ func main() {
 	}
 
 	// 3. Initialize Repositories, Services, Handlers, and Router
+	// User Module
 	userRepo := repository.NewUserRepository(db)
 	userService := service.NewUserService(userRepo, cfg.JWT.Secret)
 	userHandler := handler.NewUserHandler(userService)
 
-	router := router.NewRouter(userHandler)
+	// Product Module
+	productRepo := repository.NewProductRepository(db)
+	productService := service.NewProductService(productRepo)
+	productHandler := handler.NewProductHandler(productService)
+
+	router := router.NewRouter(userHandler, productHandler)
 	engine := router.InitRoutes()
 
 	// 4. Start Server

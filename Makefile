@@ -18,9 +18,13 @@ USER_REPO_SRC := internal/repository/user_repo.go
 USER_SERVICE_SRC := internal/service/user_service.go
 USER_REPO_MOCK_DEST := $(MOCKS_DIR)/user_repo_mock.go
 USER_SERVICE_MOCK_DEST := $(MOCKS_DIR)/user_service_mock.go
+PRODUCT_REPO_SRC := internal/repository/product_repo.go
+PRODUCT_SERVICE_SRC := internal/service/product_service.go
+PRODUCT_REPO_MOCK_DEST := $(MOCKS_DIR)/product_repo_mock.go
+PRODUCT_SERVICE_MOCK_DEST := $(MOCKS_DIR)/product_service_mock.go
 
 # setup: Install dependencies and generate mocks
-setup: $(MOCKGEN)
+setup:
 	@echo "Installing Go dependencies..."
 	$(GO_MOD_DOWNLOAD)
 	$(GO_GET) gorm.io/gorm gorm.io/driver/postgres github.com/spf13/viper github.com/stretchr/testify golang.org/x/crypto/bcrypt github.com/golang-jwt/jwt/v5 github.com/gin-gonic/gin go.uber.org/mock/mockgen
@@ -28,6 +32,8 @@ setup: $(MOCKGEN)
 	mkdir -p $(MOCKS_DIR)
 	$(MOCKGEN) -source=$(USER_REPO_SRC) -destination=$(USER_REPO_MOCK_DEST) -package=mocks
 	$(MOCKGEN) -source=$(USER_SERVICE_SRC) -destination=$(USER_SERVICE_MOCK_DEST) -package=mocks
+	$(MOCKGEN) -source=$(PRODUCT_REPO_SRC) -destination=$(PRODUCT_REPO_MOCK_DEST) -package=mocks
+	$(MOCKGEN) -source=$(PRODUCT_SERVICE_SRC) -destination=$(PRODUCT_SERVICE_MOCK_DEST) -package=mocks
 
 # up: Start Docker Compose services
 up:

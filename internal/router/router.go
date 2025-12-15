@@ -7,13 +7,15 @@ import (
 
 // Router struct holds dependencies for routing.
 type Router struct {
-	userHandler *handler.UserHandler
+	userHandler    *handler.UserHandler
+	productHandler *handler.ProductHandler
 }
 
 // NewRouter creates a new Router instance.
-func NewRouter(userHandler *handler.UserHandler) *Router {
+func NewRouter(userHandler *handler.UserHandler, productHandler *handler.ProductHandler) *Router {
 	return &Router{
-		userHandler: userHandler,
+		userHandler:    userHandler,
+		productHandler: productHandler,
 	}
 }
 
@@ -29,6 +31,15 @@ func (r *Router) InitRoutes() *gin.Engine {
 		{
 			userRoutes.POST("/register", r.userHandler.Register)
 			userRoutes.POST("/login", r.userHandler.Login)
+		}
+
+		// Product routes
+		productRoutes := v1.Group("/products")
+		{
+			// TODO: Protect CreateProduct with Auth Middleware
+			productRoutes.POST("", r.productHandler.CreateProduct)
+			productRoutes.GET("/:id", r.productHandler.GetProduct)
+			productRoutes.GET("", r.productHandler.ListProducts)
 		}
 	}
 
