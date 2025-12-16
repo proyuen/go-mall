@@ -20,4 +20,5 @@ type SKU struct {
 	Attributes JSONB           `gorm:"type:jsonb" json:"attributes"` // Dynamic attributes (Color, Size)
 	Price      decimal.Decimal `gorm:"type:numeric(10,2);not null" json:"price"`
 	Stock      int             `gorm:"not null;check:stock >= 0" json:"stock"`
+	SPU        SPU             `gorm:"foreignKey:SPUID" json:"-"`
 }

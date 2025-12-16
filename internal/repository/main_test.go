@@ -8,6 +8,7 @@ import (
 	"github.com/proyuen/go-mall/internal/model" // Import model for AutoMigrate
 	"github.com/proyuen/go-mall/pkg/config"
 	"github.com/proyuen/go-mall/pkg/database"
+	"github.com/proyuen/go-mall/pkg/snowflake" // Import snowflake package
 	"gorm.io/gorm"
 )
 
@@ -56,6 +57,13 @@ func TestMain(m *testing.M) {
 		os.Exit(1) // Exit immediately if migration fails.
 	}
 	log.Println("Test database migration completed.")
+
+	// Initialize Snowflake ID Generator
+	// Use hardcoded NodeID 1 for tests.
+	if err := snowflake.Init(1); err != nil {
+		log.Printf("FATAL: Failed to initialize snowflake: %v", err)
+		os.Exit(1)
+	}
 
 	// Run tests
 	code := m.Run()
