@@ -5,6 +5,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/proyuen/go-mall/internal/model" // Import model for AutoMigrate
 	"github.com/proyuen/go-mall/pkg/config"
 	"github.com/proyuen/go-mall/pkg/database"
 	"gorm.io/gorm"
@@ -36,16 +37,33 @@ func TestMain(m *testing.M) {
 	var err error
 	testDB, err = database.NewPostgresDB(cfg)
 	if err != nil {
-		log.Printf("WARNING: Failed to connect to test database with DBNAME='%s': %v", cfg.DBName, err)
-		log.Println("Skipping database-dependent tests or they will fail.")
+		log.Printf("FATAL: Failed to connect to test database with DBNAME='%s': %v", cfg.DBName, err)
+		os.Exit(1) // Exit immediately if DB connection fails, as repository tests depend on it.
 	}
+
+	// Explicitly AutoMigrate models for the test database
+	// This ensures the schema is up-to-date for tests,
+	// especially in environments where NewPostgresDB's internal AutoMigrate might be skipped or insufficient.
+	err = testDB.AutoMigrate(
+		&model.User{},
+		&model.SPU{},
+		&model.SKU{},
+		&model.Order{},
+		&model.OrderItem{},
+	)
+	if err != nil {
+		log.Printf("FATAL: Failed to auto migrate test database: %v", err)
+		os.Exit(1) // Exit immediately if migration fails.
+	}
+	log.Println("Test database migration completed.")
 
 	// Run tests
 	code := m.Run()
 
-	// Cleanup (Optional: Drop tables or clean data)
-	// For production-grade tests, consider adding a cleanup function here
-	// to ensure a clean state between test runs or after all tests complete.
+	// Optional: Cleanup test data or drop tables after tests.
+	// For simplicity, we are not cleaning up in this example,
+	// but in a production CI, you might want to truncate tables
+	// or drop the schema to ensure isolation between test runs.
 
 	os.Exit(code)
 }
