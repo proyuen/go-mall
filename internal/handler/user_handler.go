@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -41,6 +42,10 @@ func (h *UserHandler) Register(c *gin.Context) {
 
 	resp, err := h.userService.Register(c.Request.Context(), serviceReq)
 	if err != nil {
+		if errors.Is(err, service.ErrUserExists) {
+			c.JSON(http.StatusConflict, gin.H{"code": http.StatusConflict, "message": err.Error()})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"code": http.StatusInternalServerError, "message": err.Error()})
 		return
 	}
@@ -70,7 +75,11 @@ func (h *UserHandler) Login(c *gin.Context) {
 
 	resp, err := h.userService.Login(c.Request.Context(), serviceReq)
 	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"code": http.StatusUnauthorized, "message": err.Error()})
+		if errors.Is(err, service.ErrInvalidCredentials) {
+			c.JSON(http.StatusUnauthorized, gin.H{"code": http.StatusUnauthorized, "message": err.Error()})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"code": http.StatusInternalServerError, "message": err.Error()})
 		return
 	}
 

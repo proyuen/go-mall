@@ -57,7 +57,7 @@ func (mr *MockProductServiceMockRecorder) CreateProduct(ctx, req any) *gomock.Ca
 }
 
 // GetProduct mocks base method.
-func (m *MockProductService) GetProduct(ctx context.Context, spuID uint) (*service.ProductResp, error) {
+func (m *MockProductService) GetProduct(ctx context.Context, spuID uint64) (*service.ProductResp, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetProduct", ctx, spuID)
 	ret0, _ := ret[0].(*service.ProductResp)

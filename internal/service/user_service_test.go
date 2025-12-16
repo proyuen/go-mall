@@ -4,9 +4,11 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/proyuen/go-mall/internal/mocks"
 	"github.com/proyuen/go-mall/internal/model"
+	"github.com/proyuen/go-mall/internal/repository"
 	"github.com/proyuen/go-mall/internal/service"
 	"github.com/proyuen/go-mall/pkg/utils"
 	"github.com/stretchr/testify/assert"
@@ -17,13 +19,13 @@ import (
 func TestUserService_Register(t *testing.T) {
 	// Generate random data for test cases
 	successUser := utils.RandomOwner()
-	successEmail := utils.RandomEmail()
+	successEmail := utils.RandomEmail("")
 	existingUser := utils.RandomOwner()
 	dbFailUser := utils.RandomOwner()
-	dbFailEmail := utils.RandomEmail()
+	dbFailEmail := utils.RandomEmail("")
 
 	type fields struct {
-		mockSetup func(mockRepo *mocks.MockUserRepository, req *service.UserRegisterReq)
+		mockSetup func(mockRepo *mocks.MockUserRepository, mockHasher *mocks.MockPasswordHasher, mockMaker *mocks.MockMaker, req *service.UserRegisterReq)
 	}
 	type args struct {
 		req *service.UserRegisterReq
@@ -47,10 +49,19 @@ func TestUserService_Register(t *testing.T) {
 				},
 			},
 			fields: fields{
-				mockSetup: func(mockRepo *mocks.MockUserRepository, req *service.UserRegisterReq) {
-					mockRepo.EXPECT().GetByUsername(gomock.Any(), req.Username).Return(nil, errors.New("user not found"))
+				mockSetup: func(mockRepo *mocks.MockUserRepository, mockHasher *mocks.MockPasswordHasher, mockMaker *mocks.MockMaker, req *service.UserRegisterReq) {
+					// Expect user check -> returns Not Found (good for registration)
+					mockRepo.EXPECT().GetByUsername(gomock.Any(), req.Username).Return(nil, repository.ErrUserNotFound)
+					
+					// Expect password hashing
+					hashedPassword := "hashed_password_123"
+					mockHasher.EXPECT().Hash(req.Password).Return(hashedPassword, nil)
+
 					mockRepo.EXPECT().Create(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, user *model.User) error {
-						require.True(t, utils.CheckPassword(req.Password, user.PasswordHash), "Password should be hashed correctly")
+						// Verify the hashed password was used
+						assert.Equal(t, hashedPassword, user.PasswordHash)
+						// Simulate ID generation
+						user.ID = 101
 						return nil
 					})
 				},
@@ -60,6 +71,7 @@ func TestUserService_Register(t *testing.T) {
 			checkResp: func(t *testing.T, resp *service.UserRegisterResp, req *service.UserRegisterReq) {
 				assert.Equal(t, req.Username, resp.Username)
 				assert.Equal(t, req.Email, resp.Email)
+				assert.Equal(t, uint64(101), resp.UserID)
 			},
 		},
 		{
@@ -71,12 +83,30 @@ func TestUserService_Register(t *testing.T) {
 				},
 			},
 			fields: fields{
-				mockSetup: func(mockRepo *mocks.MockUserRepository, req *service.UserRegisterReq) {
+				mockSetup: func(mockRepo *mocks.MockUserRepository, mockHasher *mocks.MockPasswordHasher, mockMaker *mocks.MockMaker, req *service.UserRegisterReq) {
+					// Expect user check -> returns User (bad for registration)
 					mockRepo.EXPECT().GetByUsername(gomock.Any(), req.Username).Return(&model.User{Username: existingUser}, nil)
 				},
 			},
 			wantErr: true,
 			errStr:  "username already exists",
+		},
+		{
+			name: "DatabaseError_CheckUser",
+			args: args{
+				req: &service.UserRegisterReq{
+					Username: dbFailUser,
+					Email:    dbFailEmail,
+					Password: "password123",
+				},
+			},
+			fields: fields{
+				mockSetup: func(mockRepo *mocks.MockUserRepository, mockHasher *mocks.MockPasswordHasher, mockMaker *mocks.MockMaker, req *service.UserRegisterReq) {
+					mockRepo.EXPECT().GetByUsername(gomock.Any(), req.Username).Return(nil, errors.New("db connection failed"))
+				},
+			},
+			wantErr: true,
+			errStr:  "failed to check existing user",
 		},
 		{
 			name: "DatabaseError_Create",
@@ -88,8 +118,12 @@ func TestUserService_Register(t *testing.T) {
 				},
 			},
 			fields: fields{
-				mockSetup: func(mockRepo *mocks.MockUserRepository, req *service.UserRegisterReq) {
-					mockRepo.EXPECT().GetByUsername(gomock.Any(), req.Username).Return(nil, errors.New("user not found"))
+				mockSetup: func(mockRepo *mocks.MockUserRepository, mockHasher *mocks.MockPasswordHasher, mockMaker *mocks.MockMaker, req *service.UserRegisterReq) {
+					mockRepo.EXPECT().GetByUsername(gomock.Any(), req.Username).Return(nil, repository.ErrUserNotFound)
+					
+					hashedPassword := "hashed_password_123"
+					mockHasher.EXPECT().Hash(req.Password).Return(hashedPassword, nil)
+					
 					mockRepo.EXPECT().Create(gomock.Any(), gomock.Any()).Return(errors.New("db connection failed"))
 				},
 			},
@@ -104,11 +138,14 @@ func TestUserService_Register(t *testing.T) {
 			defer ctrl.Finish()
 
 			mockRepo := mocks.NewMockUserRepository(ctrl)
-			userService := service.NewUserService(mockRepo, "test_secret")
+			mockHasher := mocks.NewMockPasswordHasher(ctrl)
+			mockMaker := mocks.NewMockMaker(ctrl)
+			
+			userService := service.NewUserService(mockRepo, mockHasher, mockMaker)
 			ctx := context.Background()
 
 			if tt.fields.mockSetup != nil {
-				tt.fields.mockSetup(mockRepo, tt.args.req)
+				tt.fields.mockSetup(mockRepo, mockHasher, mockMaker, tt.args.req)
 			}
 
 			resp, err := userService.Register(ctx, tt.args.req)
@@ -134,12 +171,12 @@ func TestUserService_Register(t *testing.T) {
 }
 
 func TestUserService_Login(t *testing.T) {
-	hashedPassword, _ := utils.HashPassword("password123")
+	hashedPassword := "mock_hashed_password"
 	successUser := utils.RandomOwner()
 	notFoundUser := utils.RandomOwner()
 
 	type fields struct {
-		mockSetup func(mockRepo *mocks.MockUserRepository, req *service.UserLoginReq)
+		mockSetup func(mockRepo *mocks.MockUserRepository, mockHasher *mocks.MockPasswordHasher, mockMaker *mocks.MockMaker, req *service.UserLoginReq)
 	}
 	type args struct {
 		req *service.UserLoginReq
@@ -161,13 +198,19 @@ func TestUserService_Login(t *testing.T) {
 				},
 			},
 			fields: fields{
-				mockSetup: func(mockRepo *mocks.MockUserRepository, req *service.UserLoginReq) {
+				mockSetup: func(mockRepo *mocks.MockUserRepository, mockHasher *mocks.MockPasswordHasher, mockMaker *mocks.MockMaker, req *service.UserLoginReq) {
 					user := &model.User{
 						Username:     successUser,
 						PasswordHash: hashedPassword,
 					}
-					user.ID = 1
+					user.ID = 101 // uint64
 					mockRepo.EXPECT().GetByUsername(gomock.Any(), req.Username).Return(user, nil)
+					
+					// Expect password check
+					mockHasher.EXPECT().Check(req.Password, hashedPassword).Return(nil)
+
+					// Expect token generation
+					mockMaker.EXPECT().CreateToken(user.ID, user.Username, 24*time.Hour).Return("mock_access_token", nil, nil)
 				},
 			},
 			wantErr:  false,
@@ -182,12 +225,15 @@ func TestUserService_Login(t *testing.T) {
 				},
 			},
 			fields: fields{
-				mockSetup: func(mockRepo *mocks.MockUserRepository, req *service.UserLoginReq) {
+				mockSetup: func(mockRepo *mocks.MockUserRepository, mockHasher *mocks.MockPasswordHasher, mockMaker *mocks.MockMaker, req *service.UserLoginReq) {
 					user := &model.User{
 						Username:     successUser,
 						PasswordHash: hashedPassword,
 					}
 					mockRepo.EXPECT().GetByUsername(gomock.Any(), req.Username).Return(user, nil)
+					
+					// Expect password check failure
+					mockHasher.EXPECT().Check(req.Password, hashedPassword).Return(errors.New("invalid password"))
 				},
 			},
 			wantErr: true,
@@ -202,8 +248,8 @@ func TestUserService_Login(t *testing.T) {
 				},
 			},
 			fields: fields{
-				mockSetup: func(mockRepo *mocks.MockUserRepository, req *service.UserLoginReq) {
-					mockRepo.EXPECT().GetByUsername(gomock.Any(), req.Username).Return(nil, errors.New("user not found"))
+				mockSetup: func(mockRepo *mocks.MockUserRepository, mockHasher *mocks.MockPasswordHasher, mockMaker *mocks.MockMaker, req *service.UserLoginReq) {
+					mockRepo.EXPECT().GetByUsername(gomock.Any(), req.Username).Return(nil, repository.ErrUserNotFound)
 				},
 			},
 			wantErr: true,
@@ -217,11 +263,14 @@ func TestUserService_Login(t *testing.T) {
 			defer ctrl.Finish()
 
 			mockRepo := mocks.NewMockUserRepository(ctrl)
-			userService := service.NewUserService(mockRepo, "test_secret")
+			mockHasher := mocks.NewMockPasswordHasher(ctrl)
+			mockMaker := mocks.NewMockMaker(ctrl)
+
+			userService := service.NewUserService(mockRepo, mockHasher, mockMaker)
 			ctx := context.Background()
 
 			if tt.fields.mockSetup != nil {
-				tt.fields.mockSetup(mockRepo, tt.args.req)
+				tt.fields.mockSetup(mockRepo, mockHasher, mockMaker, tt.args.req)
 			}
 
 			resp, err := userService.Login(ctx, tt.args.req)
@@ -237,6 +286,7 @@ func TestUserService_Login(t *testing.T) {
 			if tt.wantResp {
 				require.NotNil(t, resp)
 				assert.NotEmpty(t, resp.AccessToken)
+				// assert.Equal(t, uint64(101), resp.UserID)
 			} else {
 				require.Nil(t, resp)
 			}

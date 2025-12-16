@@ -70,7 +70,7 @@ func (mr *MockProductRepositoryMockRecorder) CreateSPU(ctx, spu any) *gomock.Cal
 }
 
 // GetSKUByID mocks base method.
-func (m *MockProductRepository) GetSKUByID(ctx context.Context, id uint) (*model.SKU, error) {
+func (m *MockProductRepository) GetSKUByID(ctx context.Context, id uint64) (*model.SKU, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetSKUByID", ctx, id)
 	ret0, _ := ret[0].(*model.SKU)
@@ -85,7 +85,7 @@ func (mr *MockProductRepositoryMockRecorder) GetSKUByID(ctx, id any) *gomock.Cal
 }
 
 // GetSPUByID mocks base method.
-func (m *MockProductRepository) GetSPUByID(ctx context.Context, id uint) (*model.SPU, error) {
+func (m *MockProductRepository) GetSPUByID(ctx context.Context, id uint64) (*model.SPU, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetSPUByID", ctx, id)
 	ret0, _ := ret[0].(*model.SPU)
@@ -112,4 +112,18 @@ func (m *MockProductRepository) ListSPUs(ctx context.Context, offset, limit int)
 func (mr *MockProductRepositoryMockRecorder) ListSPUs(ctx, offset, limit any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListSPUs", reflect.TypeOf((*MockProductRepository)(nil).ListSPUs), ctx, offset, limit)
+}
+
+// UpdateSKUStock mocks base method.
+func (m *MockProductRepository) UpdateSKUStock(ctx context.Context, skuID uint64, quantity int) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpdateSKUStock", ctx, skuID, quantity)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// UpdateSKUStock indicates an expected call of UpdateSKUStock.
+func (mr *MockProductRepositoryMockRecorder) UpdateSKUStock(ctx, skuID, quantity any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateSKUStock", reflect.TypeOf((*MockProductRepository)(nil).UpdateSKUStock), ctx, skuID, quantity)
 }

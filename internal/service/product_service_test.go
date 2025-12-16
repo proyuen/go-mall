@@ -2,6 +2,7 @@ package service_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 
@@ -9,6 +10,7 @@ import (
 	"github.com/proyuen/go-mall/internal/model"
 	"github.com/proyuen/go-mall/internal/service"
 	"github.com/proyuen/go-mall/pkg/utils"
+	"github.com/shopspring/decimal" // Import decimal
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
@@ -40,9 +42,9 @@ func TestProductService_CreateProduct(t *testing.T) {
 				req: &service.ProductCreateReq{
 					Name:        productName,
 					Description: "Test Description",
-					CategoryID:  1,
+					CategoryID:  1, // uint64
 					SKUs: []service.SKUCreateReq{
-						{Attributes: skuAttr, Price: 100, Stock: 10},
+						{Attributes: json.RawMessage(skuAttr), Price: decimal.NewFromInt(100), Stock: 10}, // decimal.Decimal and RawMessage
 					},
 				},
 			},
@@ -50,13 +52,14 @@ func TestProductService_CreateProduct(t *testing.T) {
 				mockSetup: func(mockRepo *mocks.MockProductRepository, req *service.ProductCreateReq) {
 					// Expect CreateSPU to be called ONCE with SPU containing nested SKUs
 					mockRepo.EXPECT().CreateSPU(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, spu *model.SPU) error {
-						spu.ID = 1 // Simulate DB ID generation
+						spu.ID = 101 // Simulate DB ID generation (uint64)
 						assert.Equal(t, req.Name, spu.Name)
 						
 						// Verify nested SKUs
 						require.Len(t, spu.SKUs, 1)
-						assert.Equal(t, skuAttr, spu.SKUs[0].Attributes)
-						assert.Equal(t, float64(100), spu.SKUs[0].Price)
+						assert.Equal(t, model.JSONB{"color": "red"}, spu.SKUs[0].Attributes) // Check model.JSONB
+						assert.True(t, decimal.NewFromInt(100).Equal(spu.SKUs[0].Price))        // Check decimal.Decimal
+						assert.Equal(t, 10, spu.SKUs[0].Stock)
 						return nil
 					})
 				},
@@ -64,7 +67,7 @@ func TestProductService_CreateProduct(t *testing.T) {
 			wantErr:  false,
 			wantResp: true,
 			checkResp: func(t *testing.T, resp *service.ProductCreateResp) {
-				assert.Equal(t, uint(1), resp.SPUID)
+				assert.Equal(t, uint64(101), resp.SPUID) // uint64
 			},
 		},
 		{
@@ -73,7 +76,7 @@ func TestProductService_CreateProduct(t *testing.T) {
 				req: &service.ProductCreateReq{
 					Name: productName,
 					SKUs: []service.SKUCreateReq{
-						{Attributes: skuAttr},
+						{Attributes: json.RawMessage(skuAttr)},
 					},
 				},
 			},
@@ -84,6 +87,26 @@ func TestProductService_CreateProduct(t *testing.T) {
 			},
 			wantErr: true,
 			errStr:  "failed to create product",
+		},
+		{
+			name: "InvalidSKUAttributes",
+			args: args{
+				req: &service.ProductCreateReq{
+					Name:        productName,
+					Description: "Test Description",
+					CategoryID:  1,
+					SKUs: []service.SKUCreateReq{
+						{Attributes: json.RawMessage(`invalid json`), Price: decimal.NewFromInt(100), Stock: 10},
+					},
+				},
+			},
+			fields: fields{
+				mockSetup: func(mockRepo *mocks.MockProductRepository, req *service.ProductCreateReq) {
+					// No CreateSPU expected
+				},
+			},
+			wantErr: true,
+			errStr:  "invalid SKU attributes JSON",
 		},
 	}
 

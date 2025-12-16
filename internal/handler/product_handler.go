@@ -1,11 +1,14 @@
 package handler
 
 import (
+	"encoding/json"
+	"log"
 	"net/http"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/proyuen/go-mall/internal/service"
+	"github.com/shopspring/decimal"
 )
 
 // ProductHandler defines the HTTP handlers for product-related operations.
@@ -22,15 +25,15 @@ func NewProductHandler(productService service.ProductService) *ProductHandler {
 type CreateProductRequest struct {
 	Name        string       `json:"name" binding:"required"`
 	Description string       `json:"description"`
-	CategoryID  uint         `json:"category_id" binding:"required"`
+	CategoryID  uint64       `json:"category_id" binding:"required"`
 	SKUs        []SKURequest `json:"skus" binding:"required,dive"` // dive validates items in the slice
 }
 
 type SKURequest struct {
-	Attributes string  `json:"attributes" binding:"required"`
-	Price      float64 `json:"price" binding:"required,gt=0"`
-	Stock      int     `json:"stock" binding:"required,gte=0"`
-	Image      string  `json:"image"`
+	Attributes json.RawMessage `json:"attributes" binding:"required"` // Use RawMessage for direct JSON handling
+	Price      float64         `json:"price" binding:"required,gt=0"`
+	Stock      int             `json:"stock" binding:"required,gte=0"`
+	Image      string          `json:"image"`
 }
 
 // CreateProduct handles the creation of a new product.
@@ -46,9 +49,9 @@ func (h *ProductHandler) CreateProduct(c *gin.Context) {
 	for _, sku := range req.SKUs {
 		skus = append(skus, service.SKUCreateReq{
 			Attributes: sku.Attributes,
-			Price:      sku.Price,
+			Price:      decimal.NewFromFloat(sku.Price),
 			Stock:      sku.Stock,
-			Image:      sku.Image,
+			// Image is not supported in service layer currently
 		})
 	}
 
@@ -61,7 +64,9 @@ func (h *ProductHandler) CreateProduct(c *gin.Context) {
 
 	resp, err := h.productService.CreateProduct(c.Request.Context(), serviceReq)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"code": http.StatusInternalServerError, "message": err.Error()})
+		// Log the error for debugging but do not expose it to the client
+		log.Printf("Failed to create product: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"code": http.StatusInternalServerError, "message": "Internal Server Error"})
 		return
 	}
 
@@ -71,15 +76,16 @@ func (h *ProductHandler) CreateProduct(c *gin.Context) {
 // GetProduct retrieves a product by its ID.
 func (h *ProductHandler) GetProduct(c *gin.Context) {
 	idStr := c.Param("id")
-	id, err := strconv.ParseUint(idStr, 10, 32)
+	id, err := strconv.ParseUint(idStr, 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"code": http.StatusBadRequest, "message": "invalid product id"})
 		return
 	}
 
-	resp, err := h.productService.GetProduct(c.Request.Context(), uint(id))
+	resp, err := h.productService.GetProduct(c.Request.Context(), id)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"code": http.StatusInternalServerError, "message": err.Error()})
+		log.Printf("Failed to get product: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"code": http.StatusInternalServerError, "message": "Internal Server Error"})
 		return
 	}
 
@@ -96,16 +102,25 @@ func (h *ProductHandler) ListProducts(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"code": http.StatusBadRequest, "message": "invalid offset"})
 		return
 	}
+	if offset < 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"code": http.StatusBadRequest, "message": "offset cannot be negative"})
+		return
+	}
 
 	limit, err := strconv.Atoi(limitStr)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"code": http.StatusBadRequest, "message": "invalid limit"})
 		return
 	}
+	if limit < 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"code": http.StatusBadRequest, "message": "limit cannot be negative"})
+		return
+	}
 
 	resp, err := h.productService.ListProducts(c.Request.Context(), offset, limit)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"code": http.StatusInternalServerError, "message": err.Error()})
+		log.Printf("Failed to list products: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"code": http.StatusInternalServerError, "message": "Internal Server Error"})
 		return
 	}
 

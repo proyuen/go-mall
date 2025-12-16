@@ -22,8 +22,9 @@ func TestUserHandler_Register(t *testing.T) {
 
 	// Random data
 	successUser := utils.RandomOwner()
-	successEmail := utils.RandomEmail()
-	serviceErrUser := utils.RandomOwner()
+	successEmail := utils.RandomEmail("")
+	conflictUser := utils.RandomOwner()
+	errorUser := utils.RandomOwner()
 
 	type fields struct {
 		mockSetup func(mockService *mocks.MockUserService)
@@ -50,7 +51,7 @@ func TestUserHandler_Register(t *testing.T) {
 			fields: fields{
 				mockSetup: func(mockService *mocks.MockUserService) {
 					mockService.EXPECT().Register(gomock.Any(), gomock.Any()).Return(&service.UserRegisterResp{
-						UserID:   1,
+						UserID:   101, // uint64
 						Username: successUser,
 						Email:    successEmail,
 					}, nil)
@@ -75,21 +76,38 @@ func TestUserHandler_Register(t *testing.T) {
 			wantBody:   "Field validation for 'Username' failed on the 'required' tag",
 		},
 		{
-			name: "ServiceError",
+			name: "UserAlreadyExists",
 			args: args{
 				reqBody: RegisterRequest{
-					Username: serviceErrUser,
-					Email:    utils.RandomEmail(),
+					Username: conflictUser,
+					Email:    utils.RandomEmail(""),
 					Password: "password123",
 				},
 			},
 			fields: fields{
 				mockSetup: func(mockService *mocks.MockUserService) {
-					mockService.EXPECT().Register(gomock.Any(), gomock.Any()).Return(nil, errors.New("service internal error"))
+					mockService.EXPECT().Register(gomock.Any(), gomock.Any()).Return(nil, service.ErrUserExists)
+				},
+			},
+			wantStatus: http.StatusConflict,
+			wantBody:   "username already exists",
+		},
+		{
+			name: "InternalServerError",
+			args: args{
+				reqBody: RegisterRequest{
+					Username: errorUser,
+					Email:    utils.RandomEmail(""),
+					Password: "password123",
+				},
+			},
+			fields: fields{
+				mockSetup: func(mockService *mocks.MockUserService) {
+					mockService.EXPECT().Register(gomock.Any(), gomock.Any()).Return(nil, errors.New("database connection failed"))
 				},
 			},
 			wantStatus: http.StatusInternalServerError,
-			wantBody:   "service internal error",
+			wantBody:   "database connection failed",
 		},
 	}
 
@@ -130,6 +148,7 @@ func TestUserHandler_Login(t *testing.T) {
 	// Random data
 	successUser := utils.RandomOwner()
 	failUser := utils.RandomOwner()
+	errorUser := utils.RandomOwner()
 
 	type fields struct {
 		mockSetup func(mockService *mocks.MockUserService)
@@ -155,6 +174,7 @@ func TestUserHandler_Login(t *testing.T) {
 			fields: fields{
 				mockSetup: func(mockService *mocks.MockUserService) {
 					mockService.EXPECT().Login(gomock.Any(), gomock.Any()).Return(&service.UserLoginResp{
+						UserID:      101, // uint64
 						AccessToken: "mock_token",
 						ExpiresIn:   86400,
 						TokenType:   "Bearer",
@@ -180,7 +200,7 @@ func TestUserHandler_Login(t *testing.T) {
 			wantBody:   "Field validation for 'Username' failed on the 'required' tag",
 		},
 		{
-			name: "AuthenticationFailed",
+			name: "InvalidCredentials",
 			args: args{
 				reqBody: LoginRequest{
 					Username: failUser,
@@ -189,11 +209,27 @@ func TestUserHandler_Login(t *testing.T) {
 			},
 			fields: fields{
 				mockSetup: func(mockService *mocks.MockUserService) {
-					mockService.EXPECT().Login(gomock.Any(), gomock.Any()).Return(nil, errors.New("invalid credentials"))
+					mockService.EXPECT().Login(gomock.Any(), gomock.Any()).Return(nil, service.ErrInvalidCredentials)
 				},
 			},
 			wantStatus: http.StatusUnauthorized,
 			wantBody:   "invalid credentials",
+		},
+		{
+			name: "InternalServerError",
+			args: args{
+				reqBody: LoginRequest{
+					Username: errorUser,
+					Password: "password123",
+				},
+			},
+			fields: fields{
+				mockSetup: func(mockService *mocks.MockUserService) {
+					mockService.EXPECT().Login(gomock.Any(), gomock.Any()).Return(nil, errors.New("database error"))
+				},
+			},
+			wantStatus: http.StatusInternalServerError,
+			wantBody:   "database error",
 		},
 	}
 

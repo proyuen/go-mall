@@ -13,24 +13,35 @@ import (
 var testDB *gorm.DB
 
 func TestMain(m *testing.M) {
-	// 1. Setup Config (Assumes docker-compose is running)
+	// Setup test database configuration
+	// In a real CI environment, these should come from environment variables
 	cfg := &config.DatabaseConfig{
 		Host:     "localhost",
 		Port:     "5432",
 		User:     "postgres",
 		Password: "password",
-		DBName:   "mall_db",
+		DBName:   "go_mall_test",
 		SSLMode:  "disable",
 		TimeZone: "Asia/Shanghai",
 	}
 
-	// 2. Connect to DB
+	// Initialize database connection
 	var err error
 	testDB, err = database.NewPostgresDB(cfg)
 	if err != nil {
-		log.Fatalf("Failed to connect to test database: %v", err)
+		log.Printf("WARNING: Failed to connect to test database: %v", err)
+		log.Println("Skipping database-dependent tests or they will fail.")
+		// We don't os.Exit(1) here to allow other independent tests to run if any,
+		// but since these are repository tests, they will likely fail/panic.
 	}
 
-	// 3. Run Tests
-	os.Exit(m.Run())
+	// Run tests
+	code := m.Run()
+
+	// Cleanup (Optional: Drop tables or clean data)
+	// if testDB != nil {
+	// 	// cleanData(testDB)
+	// }
+
+	os.Exit(code)
 }

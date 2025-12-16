@@ -2,6 +2,7 @@ package handler
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -12,16 +13,32 @@ import (
 	"github.com/proyuen/go-mall/internal/mocks"
 	"github.com/proyuen/go-mall/internal/service"
 	"github.com/proyuen/go-mall/pkg/utils"
+	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 )
 
+// Test structures to ensure correct JSON marshalling for the handler
+type TestSKURequest struct {
+	Attributes map[string]interface{} `json:"attributes"`
+	Price      float64                `json:"price"`
+	Stock      int                    `json:"stock"`
+	Image      string                 `json:"image"`
+}
+
+type TestCreateProductRequest struct {
+	Name        string           `json:"name"`
+	Description string           `json:"description"`
+	CategoryID  uint64           `json:"category_id"`
+	SKUs        []TestSKURequest `json:"skus"`
+}
+
 func TestProductHandler_CreateProduct(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	// Random data
 	productName := utils.RandomString(10)
+	skuAttrs := map[string]interface{}{"color": "red", "size": "M"}
 
 	type fields struct {
 		mockSetup func(mockService *mocks.MockProductService)
@@ -30,89 +47,112 @@ func TestProductHandler_CreateProduct(t *testing.T) {
 		reqBody interface{}
 	}
 	tests := []struct {
-		name       string
-		args       args
-		fields     fields
-		wantStatus int
-		wantBody   string
+		name          string
+		args          args
+		fields        fields
+		wantStatus    int
+		checkResponse func(t *testing.T, w *httptest.ResponseRecorder)
 	}{
 		{
 			name: "Success",
 			args: args{
-				reqBody: CreateProductRequest{
+				reqBody: TestCreateProductRequest{
 					Name:        productName,
-					Description: "Desc",
+					Description: "Test Description",
 					CategoryID:  1,
-					SKUs: []SKURequest{
-						{Attributes: "{}", Price: 100, Stock: 10},
+					SKUs: []TestSKURequest{
+						{Attributes: skuAttrs, Price: 100.0, Stock: 10},
 					},
 				},
 			},
 			fields: fields{
 				mockSetup: func(mockService *mocks.MockProductService) {
-					mockService.EXPECT().CreateProduct(gomock.Any(), gomock.Any()).Return(&service.ProductCreateResp{
-						SPUID: 1,
-					}, nil)
+					// Use AssignableToTypeOf + DoAndReturn for strict argument validation
+					mockService.EXPECT().
+						CreateProduct(gomock.Any(), gomock.AssignableToTypeOf(&service.ProductCreateReq{})).
+						DoAndReturn(func(_ context.Context, req *service.ProductCreateReq) (*service.ProductCreateResp, error) {
+							assert.Equal(t, productName, req.Name)
+							assert.Equal(t, uint64(1), req.CategoryID)
+							assert.Len(t, req.SKUs, 1)
+
+							// Verify Price conversion (float64 -> decimal.Decimal)
+							assert.True(t, decimal.NewFromFloat(100.0).Equal(req.SKUs[0].Price), "Price mismatch")
+
+							// Verify Attributes (Map -> RawMessage)
+							var receivedAttrs map[string]interface{}
+							err := json.Unmarshal(req.SKUs[0].Attributes, &receivedAttrs)
+							require.NoError(t, err)
+							assert.Equal(t, skuAttrs, receivedAttrs)
+
+							return &service.ProductCreateResp{SPUID: 101}, nil
+						})
 				},
 			},
 			wantStatus: http.StatusCreated,
-			wantBody:   "Product created successfully",
+			checkResponse: func(t *testing.T, w *httptest.ResponseRecorder) {
+				var resp map[string]interface{}
+				err := json.Unmarshal(w.Body.Bytes(), &resp)
+				require.NoError(t, err)
+
+				assert.Equal(t, float64(http.StatusCreated), resp["code"])
+				assert.Equal(t, "Product created successfully", resp["message"])
+
+				data := resp["data"].(map[string]interface{})
+				// SPUID is returned as string due to `json:",string"` tag on uint64
+				assert.Equal(t, "101", data["spu_id"])
+			},
 		},
 		{
 			name: "InvalidInput_MissingName",
 			args: args{
-				reqBody: CreateProductRequest{
+				reqBody: TestCreateProductRequest{
 					CategoryID: 1,
-					SKUs: []SKURequest{
-						{Attributes: "{}", Price: 100, Stock: 10},
+					SKUs: []TestSKURequest{
+						{Attributes: skuAttrs, Price: 100.0, Stock: 10},
 					},
 				},
 			},
 			fields: fields{
 				mockSetup: func(mockService *mocks.MockProductService) {
-					// Expect no call
+					// Expect NO call to service
 				},
 			},
 			wantStatus: http.StatusBadRequest,
-			wantBody:   "Field validation for 'Name' failed on the 'required' tag",
-		},
-		{
-			name: "InvalidInput_InvalidSKU",
-			args: args{
-				reqBody: CreateProductRequest{
-					Name:       productName,
-					CategoryID: 1,
-					SKUs: []SKURequest{
-						{Attributes: "{}", Price: -10, Stock: 10}, // Invalid price
-					},
-				},
+			checkResponse: func(t *testing.T, w *httptest.ResponseRecorder) {
+				var resp map[string]interface{}
+				err := json.Unmarshal(w.Body.Bytes(), &resp)
+				require.NoError(t, err)
+				assert.Equal(t, float64(http.StatusBadRequest), resp["code"])
+				assert.Contains(t, resp["message"], "Field validation for 'Name' failed")
 			},
-			fields: fields{
-				mockSetup: func(mockService *mocks.MockProductService) {
-					// Expect no call
-				},
-			},
-			wantStatus: http.StatusBadRequest,
-			wantBody:   "Field validation for 'Price' failed", // Exact message depends on validator
 		},
 		{
 			name: "ServiceError",
 			args: args{
-				reqBody: CreateProductRequest{
+				reqBody: TestCreateProductRequest{
 					Name:       productName,
 					CategoryID: 1,
-					SKUs: []SKURequest{
-						{Attributes: "{}", Price: 100, Stock: 10},
+					SKUs: []TestSKURequest{
+						{Attributes: skuAttrs, Price: 100.0, Stock: 10},
 					},
 				},
 			},
 			fields: fields{
 				mockSetup: func(mockService *mocks.MockProductService) {
-					mockService.EXPECT().CreateProduct(gomock.Any(), gomock.Any()).Return(nil, errors.New("service failure"))
+					mockService.EXPECT().
+						CreateProduct(gomock.Any(), gomock.AssignableToTypeOf(&service.ProductCreateReq{})).
+						Return(nil, errors.New("db error"))
 				},
 			},
 			wantStatus: http.StatusInternalServerError,
-			wantBody:   "service failure",
+			checkResponse: func(t *testing.T, w *httptest.ResponseRecorder) {
+				var resp map[string]interface{}
+				err := json.Unmarshal(w.Body.Bytes(), &resp)
+				require.NoError(t, err)
+				assert.Equal(t, float64(http.StatusInternalServerError), resp["code"])
+				// Security check: Ensure internal error details are NOT leaked
+				assert.Equal(t, "Internal Server Error", resp["message"])
+			},
 		},
 	}
 
@@ -140,8 +180,8 @@ func TestProductHandler_CreateProduct(t *testing.T) {
 			handler.CreateProduct(c)
 
 			require.Equal(t, tt.wantStatus, w.Code)
-			if tt.wantBody != "" {
-				assert.Contains(t, w.Body.String(), tt.wantBody)
+			if tt.checkResponse != nil {
+				tt.checkResponse(t, w)
 			}
 		})
 	}

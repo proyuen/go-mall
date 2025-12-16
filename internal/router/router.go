@@ -4,21 +4,24 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/proyuen/go-mall/internal/handler"
 	"github.com/proyuen/go-mall/internal/middleware"
+	"github.com/proyuen/go-mall/pkg/token" // Import token package
 )
 
 // Router struct holds dependencies for routing.
 type Router struct {
 	userHandler    *handler.UserHandler
 	productHandler *handler.ProductHandler
-	jwtSecret      string
+	orderHandler   *handler.OrderHandler
+	tokenMaker     token.Maker // Changed from jwtSecret string
 }
 
 // NewRouter creates a new Router instance.
-func NewRouter(userHandler *handler.UserHandler, productHandler *handler.ProductHandler, jwtSecret string) *Router {
+func NewRouter(userHandler *handler.UserHandler, productHandler *handler.ProductHandler, orderHandler *handler.OrderHandler, tokenMaker token.Maker) *Router { // Changed signature
 	return &Router{
 		userHandler:    userHandler,
 		productHandler: productHandler,
-		jwtSecret:      jwtSecret,
+		orderHandler:   orderHandler,
+		tokenMaker:     tokenMaker,
 	}
 }
 
@@ -40,12 +43,18 @@ func (r *Router) InitRoutes() *gin.Engine {
 		productRoutes := v1.Group("/products")
 		{
 			// Protected routes
-			// Use AuthMiddleware to protect product creation
-			productRoutes.POST("", middleware.AuthMiddleware(r.jwtSecret), r.productHandler.CreateProduct)
+			productRoutes.POST("", middleware.AuthMiddleware(r.tokenMaker), r.productHandler.CreateProduct) // Changed middleware call
 			
 			// Public routes
 			productRoutes.GET("/:id", r.productHandler.GetProduct)
 			productRoutes.GET("", r.productHandler.ListProducts)
+		}
+
+		// Order routes (All protected)
+		orderRoutes := v1.Group("/orders")
+		orderRoutes.Use(middleware.AuthMiddleware(r.tokenMaker)) // Changed middleware call
+		{
+			orderRoutes.POST("", r.orderHandler.CreateOrder)
 		}
 	}
 

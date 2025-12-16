@@ -10,6 +10,9 @@ import (
 	"github.com/proyuen/go-mall/internal/service"
 	"github.com/proyuen/go-mall/pkg/config"
 	"github.com/proyuen/go-mall/pkg/database"
+	"github.com/proyuen/go-mall/pkg/hasher"
+	"github.com/proyuen/go-mall/pkg/snowflake"
+	"github.com/proyuen/go-mall/pkg/token"
 )
 
 func main() {
@@ -19,16 +22,31 @@ func main() {
 		log.Fatalf("Failed to load config: %v", err)
 	}
 
-	// 2. Initialize Database (Connect & Migrate)
+	// 2. Initialize Snowflake ID Generator
+	// In a distributed deployment, this NodeID (1) must be unique per instance (e.g., from config or env).
+	if err := snowflake.Init(1); err != nil {
+		log.Fatalf("Failed to initialize snowflake: %v", err)
+	}
+
+	// 3. Initialize Database (Connect & Migrate)
 	db, err := database.NewPostgresDB(&cfg.Database)
 	if err != nil {
 		log.Fatalf("Failed to initialize database: %v", err)
 	}
 
 	// 3. Initialize Repositories, Services, Handlers, and Router
+	txManager := database.NewTransactionManager(db)
+
 	// User Module
 	userRepo := repository.NewUserRepository(db)
-	userService := service.NewUserService(userRepo, cfg.JWT.Secret)
+	// Initialize password hasher with default cost
+	passwordHasher := hasher.NewBcryptHasher(0)
+	// Initialize token maker
+	tokenMaker, err := token.NewJWTMaker(cfg.JWT.Secret)
+	if err != nil {
+		log.Fatalf("Failed to create token maker: %v", err)
+	}
+	userService := service.NewUserService(userRepo, passwordHasher, tokenMaker)
 	userHandler := handler.NewUserHandler(userService)
 
 	// Product Module
@@ -36,7 +54,12 @@ func main() {
 	productService := service.NewProductService(productRepo)
 	productHandler := handler.NewProductHandler(productService)
 
-	router := router.NewRouter(userHandler, productHandler, cfg.JWT.Secret)
+	// Order Module
+	orderRepo := repository.NewOrderRepository(db)
+	orderService := service.NewOrderService(orderRepo, productRepo, txManager)
+	orderHandler := handler.NewOrderHandler(orderService)
+
+	router := router.NewRouter(userHandler, productHandler, orderHandler, tokenMaker)
 	engine := router.InitRoutes()
 
 	// 4. Start Server

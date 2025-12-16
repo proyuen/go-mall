@@ -3,14 +3,37 @@ name: Go CI
 on:
   push:
     branches: [ "main" ]
+    paths-ignore: # 🔥 只有改代码才跑测试，改文档不跑
+      - '**.md'
+      - 'docs/**'
   pull_request:
     branches: [ "main" ]
 
 jobs:
-  test:
-    name: Run Tests
+  # 🔥 新增 Job：代码风格检查
+  lint:
+    name: Lint
     runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+      - name: golangci-lint
+        uses: golangci-lint/golangci-lint-action@v3
+        with:
+          version: latest
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    # 等 Lint 通过了再跑测试，或者并行跑（根据资源情况）
+    needs: lint 
     
+    services:
+      # 🔥 进阶玩法：直接在这里定义 Service，比 docker-compose 更快更原生
+      # 但为了兼容你现在的 docker-compose 结构，我们保持现状，依然用 compose
+      
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
@@ -18,24 +41,26 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
-        go-version: '1.25' # Use a stable Go version
+        go-version: '1.25'
 
     - name: Install dependencies
       run: go mod download
 
-    - name: Start Services (Docker Compose)
-      run: |
-        docker compose -f deploy/docker-compose.yml up -d --wait
-        docker ps
+    - name: Start Services
+      # 很好，你用了 --wait，保持住
+      run: docker compose -f deploy/docker-compose.yml up -d --wait
 
     - name: Run Tests
-      # We need to ensure the config in CI points to the docker services
-      # Since we use localhost in config.yaml and docker networking in CI, 
-      # 'localhost' works because the runner exposes ports.
-      # We might need to adjust config path or env vars if defaults don't match.
+      # 🔥 注入环境变量，强制覆盖 config.yaml
+      # 即使 config.yaml 写的是 localhost，这里也能确保万无一失
+      env:
+        MALL_DATABASE_HOST: localhost
+        MALL_DATABASE_PORT: 5432
+        MALL_REDIS_ADDR: localhost:6379
+        # 如果你之前用了 Viper 自动读取环境变量，这里就会生效
       run: |
-        go test -v ./pkg/... ./internal/...
+        go test -race -v -coverprofile=coverage.out ./...
 
     - name: Shutdown Services
-      if: always()
+      if: always() # 即使测试挂了也要清理
       run: docker compose -f deploy/docker-compose.yml down

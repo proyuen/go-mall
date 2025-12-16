@@ -1,24 +1,28 @@
 package utils
 
 import (
-	"math/rand"
+	"math/rand/v2"
 	"strings"
 )
 
 const alphabet = "abcdefghijklmnopqrstuvwxyz"
 
-// RandomInt generates a random integer between min and max.
-func RandomInt(min, max int64) int64 {
-	return min + rand.Int63n(max-min+1)
+// RandomInt generates a random integer between min and max (inclusive).
+func RandomInt(min, max int) int {
+	if min >= max {
+		return min
+	}
+	return rand.IntN(max-min+1) + int(min)
 }
 
 // RandomString generates a random string of length n.
 func RandomString(n int) string {
 	var sb strings.Builder
+	sb.Grow(n)
 	k := len(alphabet)
 
 	for i := 0; i < n; i++ {
-		c := alphabet[rand.Intn(k)]
+		c := alphabet[rand.IntN(k)]
 		sb.WriteByte(c)
 	}
 
@@ -27,10 +31,15 @@ func RandomString(n int) string {
 
 // RandomOwner generates a random owner name.
 func RandomOwner() string {
-	return RandomString(6)
+	length := RandomInt(3, 10)
+	return RandomString(length)
 }
 
 // RandomEmail generates a random email address.
-func RandomEmail() string {
-	return RandomString(6) + "@email.com"
+func RandomEmail(domain string) string {
+	if domain == "" {
+		domain = "test.com"
+	}
+	length := RandomInt(3, 10)
+	return RandomString(length) + "@" + domain
 }

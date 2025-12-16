@@ -4,10 +4,17 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/proyuen/go-mall/internal/model"
 	"github.com/proyuen/go-mall/internal/repository"
-	"github.com/proyuen/go-mall/pkg/utils"
+	"github.com/proyuen/go-mall/pkg/hasher"
+	"github.com/proyuen/go-mall/pkg/token"
+)
+
+var (
+	ErrUserExists         = errors.New("username already exists")
+	ErrInvalidCredentials = errors.New("invalid credentials")
 )
 
 // DTOs (Data Transfer Objects)
@@ -19,22 +26,24 @@ type UserRegisterReq struct {
 }
 
 type UserRegisterResp struct {
-	UserID   uint
-	Username string
-	Email    string
+	UserID   uint64 `json:"user_id,string"` // Snowflake ID
+	Username string `json:"username"`
+	Email    string `json:"email"`
 }
 
 type UserLoginReq struct {
-	Username string
-	Password string
+	Username string `json:"username"`
+	Password string `json:"password"`
 }
 
 type UserLoginResp struct {
-	AccessToken string
-	ExpiresIn   int64 // Seconds
-	TokenType   string
+	UserID      uint64 `json:"user_id,string"` // Snowflake ID
+	AccessToken string `json:"access_token"`
+	ExpiresIn   int64  `json:"expires_in"` // Seconds
+	TokenType   string `json:"token_type"`
 }
 
+//go:generate mockgen -source=$GOFILE -destination=../mocks/user_service_mock.go -package=mocks
 // UserService defines the interface for user business logic.
 type UserService interface {
 	Register(ctx context.Context, req *UserRegisterReq) (*UserRegisterResp, error)
@@ -42,44 +51,55 @@ type UserService interface {
 }
 
 type userService struct {
-	repo      repository.UserRepository
-	jwtSecret string
+	repo       repository.UserRepository
+	hasher     hasher.PasswordHasher
+	tokenMaker token.Maker
 }
 
 // NewUserService creates a new UserService instance.
-func NewUserService(repo repository.UserRepository, jwtSecret string) UserService {
+func NewUserService(repo repository.UserRepository, hasher hasher.PasswordHasher, tokenMaker token.Maker) UserService {
 	return &userService{
-		repo:      repo,
-		jwtSecret: jwtSecret,
+		repo:       repo,
+		hasher:     hasher,
+		tokenMaker: tokenMaker,
 	}
 }
 
 // Register creates a new user.
 func (s *userService) Register(ctx context.Context, req *UserRegisterReq) (*UserRegisterResp, error) {
 	// 1. Check if user already exists
-	existingUser, err := s.repo.GetByUsername(ctx, req.Username)
-	if err == nil && existingUser != nil {
-		return nil, errors.New("username already exists")
+	// Strict error handling: connection error vs not found error
+	_, err := s.repo.GetByUsername(ctx, req.Username)
+	if err != nil {
+		if !errors.Is(err, repository.ErrUserNotFound) {
+			// Database connection error or other internal error
+			return nil, fmt.Errorf("failed to check existing user: %w", err)
+		}
+		// ErrUserNotFound means the user does not exist, so we can proceed.
+	} else {
+		// User found (err == nil), so username is taken
+		return nil, ErrUserExists
 	}
 
-	// 3. Hash password
-	hashedPassword, err := utils.HashPassword(req.Password)
+	// 2. Hash password
+	hashedPassword, err := s.hasher.Hash(req.Password)
 	if err != nil {
 		return nil, fmt.Errorf("password hashing failed: %w", err)
 	}
 
-	// 4. Create user model
+	// 3. Create user model
 	user := &model.User{
 		Username:     req.Username,
 		Email:        req.Email,
 		PasswordHash: hashedPassword,
+		Role:         "user", // Explicitly set role
 	}
 
 	if err := s.repo.Create(ctx, user); err != nil {
 		return nil, fmt.Errorf("failed to create user record: %w", err)
 	}
 
-	// 5. Build Response
+	// 4. Build Response
 	return &UserRegisterResp{
 		UserID:   user.ID,
 		Username: user.Username,
@@ -92,25 +112,29 @@ func (s *userService) Login(ctx context.Context, req *UserLoginReq) (*UserLoginR
 	// 1. Get user
 	user, err := s.repo.GetByUsername(ctx, req.Username)
 	if err != nil {
-		// Log the actual error internally if needed, but return generic error to user
-		return nil, errors.New("invalid credentials")
+		if errors.Is(err, repository.ErrUserNotFound) {
+			return nil, ErrInvalidCredentials
+		}
+		return nil, fmt.Errorf("failed to fetch user: %w", err)
 	}
 
 	// 2. Check password
-	if !utils.CheckPassword(req.Password, user.PasswordHash) {
-		return nil, errors.New("invalid credentials")
+	if err := s.hasher.Check(req.Password, user.PasswordHash); err != nil {
+		return nil, ErrInvalidCredentials
 	}
 
 	// 3. Generate Token
-	token, err := utils.GenerateToken(user.ID, user.Username, s.jwtSecret)
+	duration := 24 * time.Hour
+	accessToken, _, err := s.tokenMaker.CreateToken(user.ID, user.Username, duration)
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate token: %w", err)
+		return nil, fmt.Errorf("failed to generate access token: %w", err)
 	}
 
 	// 4. Build Response
 	return &UserLoginResp{
-		AccessToken: token,
-		ExpiresIn:   86400, // 24 hours
+		UserID:      user.ID,
+		AccessToken: accessToken,
+		ExpiresIn:   int64(duration.Seconds()),
 		TokenType:   "Bearer",
 	}, nil
 }
