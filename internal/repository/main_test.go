@@ -14,34 +14,38 @@ var testDB *gorm.DB
 
 func TestMain(m *testing.M) {
 	// Setup test database configuration
-	// In a real CI environment, these should come from environment variables
 	cfg := &config.DatabaseConfig{
 		Host:     "localhost",
 		Port:     "5432",
 		User:     "postgres",
 		Password: "password",
-		DBName:   "go_mall_test",
 		SSLMode:  "disable",
 		TimeZone: "Asia/Shanghai",
+	}
+
+	// Prioritize MALL_DATABASE_DBNAME environment variable for DBName
+	// Fallback to "go_mall_test" if the environment variable is not set.
+	dbNameFromEnv := os.Getenv("MALL_DATABASE_DBNAME")
+	if dbNameFromEnv != "" {
+		cfg.DBName = dbNameFromEnv
+	} else {
+		cfg.DBName = "go_mall_test"
 	}
 
 	// Initialize database connection
 	var err error
 	testDB, err = database.NewPostgresDB(cfg)
 	if err != nil {
-		log.Printf("WARNING: Failed to connect to test database: %v", err)
+		log.Printf("WARNING: Failed to connect to test database with DBNAME='%s': %v", cfg.DBName, err)
 		log.Println("Skipping database-dependent tests or they will fail.")
-		// We don't os.Exit(1) here to allow other independent tests to run if any,
-		// but since these are repository tests, they will likely fail/panic.
 	}
 
 	// Run tests
 	code := m.Run()
 
 	// Cleanup (Optional: Drop tables or clean data)
-	// if testDB != nil {
-	// 	// cleanData(testDB)
-	// }
+	// For production-grade tests, consider adding a cleanup function here
+	// to ensure a clean state between test runs or after all tests complete.
 
 	os.Exit(code)
 }
