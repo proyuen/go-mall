@@ -29,11 +29,7 @@ jobs:
     runs-on: ubuntu-latest
     # 等 Lint 通过了再跑测试，或者并行跑（根据资源情况）
     needs: lint 
-    
-    services:
-      # 🔥 进阶玩法：直接在这里定义 Service，比 docker-compose 更快更原生
-      # 但为了兼容你现在的 docker-compose 结构，我们保持现状，依然用 compose
-      
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
