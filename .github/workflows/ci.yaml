@@ -52,7 +52,8 @@ jobs:
       env:
         MALL_DATABASE_HOST: localhost
         MALL_DATABASE_PORT: 5432
-        MALL_REDIS_ADDR: localhost:6379
+        MALL_DATABASE_DBNAME: mall_db
+        # MALL_REDIS_ADDR: localhost:6379
         # 如果你之前用了 Viper 自动读取环境变量，这里就会生效
       run: |
         go test -race -v -coverprofile=coverage.out ./...

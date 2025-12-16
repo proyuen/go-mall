@@ -87,7 +87,7 @@ func TestRandomEmail(t *testing.T) {
 	t.Parallel()
 
 	// 修正后的正则：匹配 3-10 位的用户名
-	defaultPattern := regexp.MustCompile(`^[a-z]{3,10}@email\.com$`)
+	defaultPattern := regexp.MustCompile(`^[a-z]{3,10}@test\.com$`)
 
 	t.Run("Default Domain", func(t *testing.T) {
 		for i := 0; i < 50; i++ {
