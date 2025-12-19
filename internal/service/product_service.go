@@ -3,13 +3,15 @@ package service
 import (
 	"context"
 	"encoding/json"
-	"errors" // Added errors import
+	"errors"
 	"fmt"
+	"time"
 
 	"github.com/proyuen/go-mall/internal/model"
 	"github.com/proyuen/go-mall/internal/repository"
+	"github.com/proyuen/go-mall/pkg/cache" // Import cache package
 	"github.com/shopspring/decimal"
-	"gorm.io/gorm" // Added gorm import
+	"gorm.io/gorm"
 )
 
 // ProductCreateReq defines the request structure for creating a new product.
@@ -60,12 +62,16 @@ type ProductService interface {
 }
 
 type productService struct {
-	repo repository.ProductRepository
+	repo  repository.ProductRepository
+	cache cache.Cache // Add cache dependency
 }
 
 // NewProductService creates a new ProductService instance.
-func NewProductService(repo repository.ProductRepository) ProductService {
-	return &productService{repo: repo}
+func NewProductService(repo repository.ProductRepository, cache cache.Cache) ProductService {
+	return &productService{
+		repo:  repo,
+		cache: cache,
+	}
 }
 
 // CreateProduct creates a new SPU and its associated SKUs in a single transaction.
@@ -105,18 +111,29 @@ func (s *productService) CreateProduct(ctx context.Context, req *ProductCreateRe
 }
 
 // GetProduct retrieves a product (SPU) with all its associated SKUs.
-func (s *productService) GetProduct(ctx context.Context, spuID uint64) (*ProductResp, error) { // Changed to uint64
+func (s *productService) GetProduct(ctx context.Context, spuID uint64) (*ProductResp, error) {
+	// 1. Try to fetch from cache
+	cacheKey := fmt.Sprintf("mall:product:spu:%d", spuID)
+	cachedVal, err := s.cache.Get(ctx, cacheKey)
+	if err == nil && cachedVal != "" {
+		var resp ProductResp
+		if err := json.Unmarshal([]byte(cachedVal), &resp); err == nil {
+			return &resp, nil
+		}
+		// Fallback to DB if unmarshal fails (log error in production)
+	}
+
+	// 2. Fetch from DB
 	spu, err := s.repo.GetSPUByID(ctx, spuID)
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) { // Assuming repo returns gorm.ErrRecordNotFound
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, errors.New("product not found")
 		}
 		return nil, fmt.Errorf("failed to get SPU by ID %d: %w", spuID, err)
 	}
 
 	var skuResps []SKUResp
-	// Assuming spu.SKUs is preloaded by the repository (or we fetch them explicitly)
-	// For now, let's assume the repo will preload them based on the model definition.
+	// Assuming spu.SKUs is preloaded by the repository
 	for _, sku := range spu.SKUs {
 		skuResps = append(skuResps, SKUResp{
 			ID:         sku.ID,
@@ -126,13 +143,20 @@ func (s *productService) GetProduct(ctx context.Context, spuID uint64) (*Product
 		})
 	}
 
-	return &ProductResp{
+	resp := &ProductResp{
 		ID:          spu.ID,
 		Name:        spu.Name,
 		Description: spu.Description,
 		CategoryID:  spu.CategoryID,
 		SKUs:        skuResps,
-	}, nil
+	}
+
+	// 3. Set Cache (ignore error for now)
+	if bytes, err := json.Marshal(resp); err == nil {
+		_ = s.cache.Set(ctx, cacheKey, string(bytes), time.Hour)
+	}
+
+	return resp, nil
 }
 
 // ListProducts retrieves a list of products (SPUs) with pagination.
