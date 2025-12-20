@@ -117,6 +117,21 @@ func (c *instrumentedCache) Set(ctx context.Context, key string, value interface
 	return err
 }
 
+// SetNX stores a value in the cache only if it does not exist.
+func (c *instrumentedCache) SetNX(ctx context.Context, key string, value interface{}, expiration time.Duration) (bool, error) {
+	start := time.Now()
+	ctx, span := c.tracer.Start(ctx, "redis.SetNX", trace.WithAttributes(
+		attribute.String("db.system", "redis"),
+		attribute.String("db.operation", "SETNX"),
+		attribute.String("db.statement", key),
+	))
+	defer span.End()
+
+	ok, err := c.next.SetNX(ctx, key, value, expiration)
+	c.observe(ctx, "setnx", err, start)
+	return ok, err
+}
+
 // Del deletes keys from the cache.
 func (c *instrumentedCache) Del(ctx context.Context, keys ...string) error {
 	start := time.Now()

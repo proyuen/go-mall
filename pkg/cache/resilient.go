@@ -93,6 +93,17 @@ func (c *resilientCache) Set(ctx context.Context, key string, value interface{},
 	return err
 }
 
+// SetNX stores a value in the cache only if it does not exist with resilience.
+func (c *resilientCache) SetNX(ctx context.Context, key string, value interface{}, expiration time.Duration) (bool, error) {
+	res, err := c.executeWithRetry(ctx, func() (interface{}, error) {
+		return c.next.SetNX(ctx, key, value, expiration)
+	})
+	if err != nil {
+		return false, err
+	}
+	return res.(bool), nil
+}
+
 // Del deletes keys from the cache with resilience.
 func (c *resilientCache) Del(ctx context.Context, keys ...string) error {
 	_, err := c.executeWithRetry(ctx, func() (interface{}, error) {

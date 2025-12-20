@@ -11,7 +11,12 @@ type Config struct {
 	Server   ServerConfig   `mapstructure:"server"`
 	Database DatabaseConfig `mapstructure:"database"`
 	Redis    RedisConfig    `mapstructure:"redis"`
+	RabbitMQ RabbitMQConfig `mapstructure:"rabbitmq"`
 	JWT      JWTConfig      `mapstructure:"jwt"`
+}
+
+type RabbitMQConfig struct {
+	URL string `mapstructure:"url"`
 }
 
 type ServerConfig struct {

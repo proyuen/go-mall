@@ -4,16 +4,19 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"log/slog"
 	"time"
 
 	"github.com/proyuen/go-mall/internal/handler"
 	"github.com/proyuen/go-mall/internal/repository"
 	"github.com/proyuen/go-mall/internal/router"
 	"github.com/proyuen/go-mall/internal/service"
+	"github.com/proyuen/go-mall/internal/worker"
 	"github.com/proyuen/go-mall/pkg/cache"
 	"github.com/proyuen/go-mall/pkg/config"
 	"github.com/proyuen/go-mall/pkg/database"
 	"github.com/proyuen/go-mall/pkg/hasher"
+	"github.com/proyuen/go-mall/pkg/mq"
 	"github.com/proyuen/go-mall/pkg/snowflake"
 	"github.com/proyuen/go-mall/pkg/token"
 )
@@ -43,7 +46,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to initialize redis client: %v", err)
 	}
-	
+
 	baseCache := cache.NewRedisCache(redisClient, "mall")
 
 	// Layer 2: Observability (Tracing & Metrics)
@@ -61,8 +64,8 @@ func main() {
 		if acquired, err := lock.Lock(ctx, ttl); err == nil && acquired {
 			log.Println("Lock acquired for background task")
 			// Simulate long work (watchdog will renew lock)
-			time.Sleep(15 * time.Second) 
-		
+			time.Sleep(15 * time.Second)
+
 			if err := lock.Unlock(ctx); err != nil {
 				log.Printf("Failed to unlock: %v", err)
 			} else {
@@ -82,7 +85,7 @@ func main() {
 	passwordHasher := hasher.NewBcryptHasher(0)
 	// Initialize token maker
 
-tokenMaker, err := token.NewJWTMaker(cfg.JWT.Secret)
+	tokenMaker, err := token.NewJWTMaker(cfg.JWT.Secret)
 	if err != nil {
 		log.Fatalf("Failed to create token maker: %v", err)
 	}
@@ -98,6 +101,28 @@ tokenMaker, err := token.NewJWTMaker(cfg.JWT.Secret)
 	orderRepo := repository.NewOrderRepository(db)
 	orderService := service.NewOrderService(orderRepo, productRepo, txManager)
 	orderHandler := handler.NewOrderHandler(orderService)
+
+	// Initialize Inventory Service
+	inventoryService := service.NewInventoryService(appCache, redisClient)
+
+	// Initialize RabbitMQ & Worker
+	logger := slog.Default()
+	if cfg.RabbitMQ.URL != "" {
+		mqClient, err := mq.NewRabbitMQ(cfg.RabbitMQ.URL, logger)
+		if err != nil {
+			log.Printf("Failed to connect to RabbitMQ: %v", err)
+		} else {
+			// In a real app, handle graceful shutdown
+			// defer mqClient.Close()
+
+			orderWorker := worker.NewOrderWorker(mqClient, inventoryService, orderService, appCache, logger)
+			go func() {
+				if err := orderWorker.Start(); err != nil {
+					log.Printf("OrderWorker failed: %v", err)
+				}
+			}()
+		}
+	}
 
 	router := router.NewRouter(userHandler, productHandler, orderHandler, tokenMaker)
 	engine := router.InitRoutes()

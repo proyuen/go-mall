@@ -20,6 +20,9 @@ type Cache interface {
 	// Set stores a value in the cache with a given expiration.
 	Set(ctx context.Context, key string, value interface{}, expiration time.Duration) error
 
+	// SetNX stores a value in the cache only if it does not exist.
+	SetNX(ctx context.Context, key string, value interface{}, expiration time.Duration) (bool, error)
+
 	// Del deletes one or more keys from the cache.
 	Del(ctx context.Context, keys ...string) error
 
@@ -119,6 +122,10 @@ func (r *redisCache) Get(ctx context.Context, key string) (string, error) {
 
 func (r *redisCache) Set(ctx context.Context, key string, value interface{}, expiration time.Duration) error {
 	return r.client.Set(ctx, r.buildKey(key), value, expiration).Err()
+}
+
+func (r *redisCache) SetNX(ctx context.Context, key string, value interface{}, expiration time.Duration) (bool, error) {
+	return r.client.SetNX(ctx, r.buildKey(key), value, expiration).Result()
 }
 
 func (r *redisCache) Del(ctx context.Context, keys ...string) error {
